@@ -1,0 +1,25 @@
+{
+  "name": "koa-elm-oauth-example",
+  "version": "1.0.0",
+  "description": "GitHub OAuth example",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "start": "elm-make --yes elm/Main.elm --output=public/elm.js && uglifyjs -c -m -o public/elm.js public/elm.js && node server"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "Unlicense",
+  "engines": {
+    "node": ">=10.0.0"
+  },
+  "dependencies": {
+    "koa": "^2.5.1",
+    "koa-bodyparser": "^4.2.1",
+    "koa-logger": "^3.2.0",
+    "koa-route": "^3.2.0",
+    "koa-static": "^4.0.3",
+    "node-fetch": "^2.1.2",
+    "uglify-js": "^3.4.0"
+  }
+}

@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="utf-8">
+    <meta http-equiv="x-ua-compatible" content="ie=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+    <meta name="theme-color" content="#000000">
+
+    <title>OAuth example</title>
+
+    <link rel="stylesheet" type="text/css" media="screen" href="/main.css" />
+</head>
+
+<body>
+    <noscript>
+        You need to enable JavaScript to run this app.
+    </noscript>
+    <div id="root"></div>
+    <script src="/elm.js"></script>
+    <script>
+        let data = {};
+        /* INSERT_DATA */;
+        console.log('Will start elm app with', data)
+        Elm.Main.embed(document.getElementById('root'), data);
+    </script>
+</body>
+
+</html>
