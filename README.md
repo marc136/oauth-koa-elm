@@ -2,7 +2,7 @@
 
 ## Running
 Install the dependencies with `npm install` or `yarn`.  
-Then compile the elm code to javascript and start the node.js server with `npm start` or `yarn start`.
+Then compile the elm code to javascript and start the node.js server with `npm start --silent` or `yarn start`.
 
 
 ## Steps

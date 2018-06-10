@@ -25,8 +25,9 @@ type alias Model =
 type Route
     = Question
     | Unknown Location
-    | GitHubAuth String String String -- db-key code state
-    | GitHubAuthError (List ( String, String ))
+    | AuthGitHub String String String -- db-key code state
+    | AuthGoogle String String -- db-key code
+    | ErrorAuthGitHub (List ( String, String ))
 
 
 type WebResource a
@@ -62,10 +63,16 @@ init flags location =
                     defaultModel
     in
     case page of
-        GitHubAuth dbKey code state ->
+        AuthGitHub dbKey code state ->
             ( { model | page = Question, email = Checking }
                 |> addMessage ("GitHub code " ++ code)
             , Api.verifyMailGitHub VerifiedEmail dbKey code state
+            )
+
+        AuthGoogle dbKey code ->
+            ( { model | page = Question, email = Checking }
+                |> addMessage ("Google code " ++ code)
+            , Api.verifyMailGoogle VerifiedEmail dbKey code
             )
 
         _ ->
@@ -98,6 +105,8 @@ type Msg
     | Answer String
     | GetGitHubUrl
     | GetGitHubUrlResponse (Result Http.Error String)
+    | GetGoogleUrl
+    | GetGoogleUrlResponse (Result Http.Error String)
     | VerifiedEmail (Result Http.Error String)
 
 
@@ -113,14 +122,26 @@ update msg model =
             ( { model | answer = Just string }, Cmd.none )
 
         GetGitHubUrl ->
-            ( model
-            , Api.getGitHubUrl GetGitHubUrlResponse model
-            )
+            ( model, Api.getAuthUrl "github" GetGitHubUrlResponse model )
 
         GetGitHubUrlResponse response ->
             case
                 response
                     |> Debug.log "GetGitHubUrlResponse"
+            of
+                Ok url ->
+                    ( model, Navigation.load url )
+
+                Err err ->
+                    ( model, Cmd.none )
+
+        GetGoogleUrl ->
+            ( model, Api.getAuthUrl "google" GetGoogleUrlResponse model )
+
+        GetGoogleUrlResponse response ->
+            case
+                response
+                    |> Debug.log "GetGoogleUrlResponse"
             of
                 Ok url ->
                     ( model, Navigation.load url )
@@ -151,8 +172,9 @@ route : UrlParser.Parser (Route -> a) a
 route =
     UrlParser.oneOf
         [ UrlParser.map Question UrlParser.top
-        , UrlParser.map gitHubAuth authParser
-        , UrlParser.map gitHubErrorAuth authErrorParser
+        , UrlParser.map authGitHub authGitHubParser
+        , UrlParser.map authGoogle authGoogleParser
+        , UrlParser.map gitHubErrorAuth gitHubErrorAuthParser
         ]
 
 
@@ -165,20 +187,36 @@ addMessage string model =
     { model | messages = string :: model.messages }
 
 
-gitHubAuth : String -> Maybe String -> Maybe String -> Route
-gitHubAuth dbKey maybeCode maybeState =
+authGitHub : String -> Maybe String -> Maybe String -> Route
+authGitHub dbKey maybeCode maybeState =
     case ( maybeCode, maybeState ) of
         ( Just code, Just state ) ->
-            GitHubAuth dbKey code state
+            AuthGitHub dbKey code state
 
         _ ->
             Question
 
 
-authParser : UrlParser.Parser (String -> Maybe String -> Maybe String -> a) a
-authParser =
+authGitHubParser : UrlParser.Parser (String -> Maybe String -> Maybe String -> a) a
+authGitHubParser =
     -- successful redirect /auth/github/<key>?code=<str>&state=<str>
     s "auth" </> s "github" </> UrlParser.string <?> stringParam "code" <?> stringParam "state"
+
+
+authGoogle : Maybe String -> Maybe String -> Route
+authGoogle maybeKey maybeCode =
+    case ( maybeKey, maybeCode ) of
+        ( Just key, Just code ) ->
+            AuthGoogle key code
+
+        _ ->
+            Question
+
+
+authGoogleParser : UrlParser.Parser (Maybe String -> Maybe String -> a) a
+authGoogleParser =
+    -- successful redirect /auth/google?state=<key>&code=<str>#
+    s "auth" </> s "google" <?> stringParam "state" <?> stringParam "code"
 
 
 gitHubErrorAuth : Maybe String -> Maybe String -> Maybe String -> Maybe String -> Route
@@ -186,11 +224,11 @@ gitHubErrorAuth error description uri state =
     -- Note: This should be handled on the server side
     [ ( "error", error ), ( "description", description ), ( "uri", uri ), ( "state", state ) ]
         |> List.filterMap dropUseless
-        |> GitHubAuthError
+        |> ErrorAuthGitHub
 
 
-authErrorParser : UrlParser.Parser (Maybe String -> Maybe String -> Maybe String -> Maybe String -> a) a
-authErrorParser =
+gitHubErrorAuthParser : UrlParser.Parser (Maybe String -> Maybe String -> Maybe String -> Maybe String -> a) a
+gitHubErrorAuthParser =
     -- see https://developer.github.com/apps/managing-oauth-apps/troubleshooting-authorization-request-errors/
     s "auth" </> s "github" <?> stringParam "error" <?> stringParam "error_description" <?> stringParam "error_uri" <?> stringParam "state"
 
@@ -212,16 +250,20 @@ dropUseless ( key, maybeValue ) =
 view : Model -> Html Msg
 view model =
     Html.div [ Attr.class "centered" ]
-        [ Html.main_ [] <|
+        [ Html.main_ [ Attr.class "column" ] <|
             case model.page of
                 Question ->
                     question model
 
-                GitHubAuth dbKey code state ->
+                AuthGitHub dbKey code state ->
                     -- this route is currently never displayed
                     question model
 
-                GitHubAuthError errors ->
+                AuthGoogle dbKey code ->
+                    -- this route is currently never displayed
+                    question model
+
+                ErrorAuthGitHub errors ->
                     [ Html.ul [] <|
                         List.map
                             (\( key, value ) ->
@@ -257,11 +299,18 @@ question model =
     , Html.h2 [] [ Html.text "Email" ]
     , case model.email of
         NotAsked ->
-            Html.button
-                [ Attr.class "button github"
-                , onClick GetGitHubUrl
+            Html.div [ Attr.class "column" ]
+                [ Html.button
+                    [ Attr.class "button github"
+                    , onClick GetGitHubUrl
+                    ]
+                    [ Html.text "Provide with Github" ]
+                , Html.button
+                    [ Attr.class "button google"
+                    , onClick GetGoogleUrl
+                    ]
+                    [ Html.text "Provide with Google Signin" ]
                 ]
-                [ Html.text "Provide with Github" ]
 
         Received email ->
             Html.p [] [ Html.text email ]
@@ -285,10 +334,13 @@ footer model =
                 Unknown location ->
                     "Unknown"
 
-                GitHubAuth dbKey code state ->
+                AuthGitHub dbKey code state ->
                     "GitHub Authentication code received"
 
-                GitHubAuthError _ ->
+                AuthGoogle dbKey code ->
+                    "Google Authentication code received"
+
+                ErrorAuthGitHub _ ->
                     "GitHub Authentication failed"
     in
     Html.footer []
