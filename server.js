@@ -74,7 +74,6 @@ function getUrl (ctx, provider) {
       break
 
     case 'google':
-      console.log(auth.google.getUrl(key))
       ctx.body = auth.google.getUrl(key)
       break
 
