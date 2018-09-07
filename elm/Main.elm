@@ -122,13 +122,17 @@ type Msg
     | GetGoogleUrl
     | GetGoogleUrlResponse (Result Http.Error String)
     | VerifiedEmail (Result Http.Error String)
+    | Restart
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )
 update msg model =
     case msg of
         LinkClicked urlRequest ->
-            let _ = Debug.log "LinkClicked" urlRequest in 
+            let
+                _ =
+                    Debug.log "LinkClicked" urlRequest
+            in
             case urlRequest of
                 Browser.Internal url ->
                     ( model
@@ -137,20 +141,15 @@ update msg model =
                     )
 
                 Browser.External href ->
-                    let _ = Debug.log "Would like to move to external url" href in
+                    let
+                        _ =
+                            Debug.log "Would like to move to external url" href
+                    in
                     -- ( model, Nav.load href )
-                    (model, Cmd.none)
+                    ( model, Cmd.none )
 
         UrlChange location ->
-            let
-                _ =
-                    Debug.log "UrlChange" location
-            in
-            ( { model
-                | page =
-                    parseRoute location
-                        |> Debug.log "parseRoute result"
-              }
+            ( { model | page = parseRoute location }
             , Cmd.none
             )
 
@@ -196,6 +195,9 @@ update msg model =
                 |> addMessage (httpErrorToString err)
             , Cmd.none
             )
+
+        Restart ->
+            ( initModel model.navKey, Cmd.none )
 
 
 parseRoute : Url -> Route
@@ -397,7 +399,7 @@ httpErrorToString error =
             "BadPayload: " ++ string
 
 
-footer : Model -> Html msg
+footer : Model -> Html Msg
 footer model =
     let
         page =
@@ -418,7 +420,7 @@ footer model =
                     "GitHub Authentication failed"
     in
     Html.footer []
-        [ Html.a [ Attr.href "/" ] [ Html.text "Start again" ]
+        [ Html.a [ Attr.href "/", onClick Restart ] [ Html.text "Start again" ]
         , Html.span [] [ Html.text <| "Page: " ++ page ]
         ]
 
