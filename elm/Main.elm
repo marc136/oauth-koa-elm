@@ -1,20 +1,25 @@
-module Main exposing (..)
+module Main exposing (main)
 
 import Api
+import Browser
+import Browser.Navigation as Nav
 import Html exposing (Html)
 import Html.Attributes as Attr
 import Html.Events exposing (onClick, onInput)
-import Http exposing (encodeUri)
+import Http
 import Json.Decode
-import Navigation exposing (Location)
-import UrlParser exposing ((</>), (<?>), s, stringParam)
+import Url exposing (Url)
+import Url.Parser as UrlParser exposing ((</>), (<?>), s)
+import Url.Parser.Query as Query
+
 
 
 ---- MODEL ----
 
 
 type alias Model =
-    { page : Route
+    { navKey : Nav.Key
+    , page : Route
     , email : WebResource String
     , question : String
     , answer : Maybe String
@@ -24,7 +29,7 @@ type alias Model =
 
 type Route
     = Question
-    | Unknown Location
+    | Unknown Url
     | AuthGitHub String String String -- db-key code state
     | AuthGoogle String String -- db-key code
     | ErrorAuthGitHub (List ( String, String ))
@@ -41,16 +46,23 @@ type alias Flags =
     { question : String, answer : String }
 
 
-init : Json.Decode.Value -> Location -> ( Model, Cmd Msg )
-init flags location =
+init : Json.Decode.Value -> Url -> Nav.Key -> ( Model, Cmd Msg )
+init flags url key =
     let
         page =
-            parseRoute location
+            let
+                _ =
+                    Debug.log "init url" url
+            in
+            parseRoute url
+
+        model_ =
+            initModel key
 
         model =
             case Json.Decode.decodeValue decodeFlags flags of
                 Ok data ->
-                    { defaultModel
+                    { model_
                         | question = data.question
                         , answer = Just data.answer
                     }
@@ -60,7 +72,7 @@ init flags location =
                         _ =
                             Debug.log "Could not parse initialization data" err
                     in
-                    defaultModel
+                    model_
     in
     case page of
         AuthGitHub dbKey code state ->
@@ -86,9 +98,10 @@ decodeFlags =
         (Json.Decode.field "answer" Json.Decode.string)
 
 
-defaultModel : Model
-defaultModel =
-    { page = Question
+initModel : Nav.Key -> Model
+initModel navKey =
+    { navKey = navKey
+    , page = Question
     , email = NotAsked
     , question = "What is your favorite color?"
     , answer = Nothing
@@ -101,7 +114,8 @@ defaultModel =
 
 
 type Msg
-    = UrlChange Location
+    = LinkClicked Browser.UrlRequest
+    | UrlChange Url
     | Answer String
     | GetGitHubUrl
     | GetGitHubUrlResponse (Result Http.Error String)
@@ -113,8 +127,30 @@ type Msg
 update : Msg -> Model -> ( Model, Cmd Msg )
 update msg model =
     case msg of
+        LinkClicked urlRequest ->
+            let _ = Debug.log "LinkClicked" urlRequest in 
+            case urlRequest of
+                Browser.Internal url ->
+                    ( model
+                    , Nav.pushUrl model.navKey (Url.toString url)
+                      -- triggers UrlChange
+                    )
+
+                Browser.External href ->
+                    let _ = Debug.log "Would like to move to external url" href in
+                    -- ( model, Nav.load href )
+                    (model, Cmd.none)
+
         UrlChange location ->
-            ( { model | page = parseRoute location }
+            let
+                _ =
+                    Debug.log "UrlChange" location
+            in
+            ( { model
+                | page =
+                    parseRoute location
+                        |> Debug.log "parseRoute result"
+              }
             , Cmd.none
             )
 
@@ -130,7 +166,7 @@ update msg model =
                     |> Debug.log "GetGitHubUrlResponse"
             of
                 Ok url ->
-                    ( model, Navigation.load url )
+                    ( model, Nav.load url )
 
                 Err err ->
                     ( model, Cmd.none )
@@ -144,7 +180,7 @@ update msg model =
                     |> Debug.log "GetGoogleUrlResponse"
             of
                 Ok url ->
-                    ( model, Navigation.load url )
+                    ( model, Nav.load url )
 
                 Err err ->
                     ( model, Cmd.none )
@@ -152,20 +188,20 @@ update msg model =
         VerifiedEmail (Ok email) ->
             ( { model | page = Question, email = Received email }
                 |> addMessage ("verified " ++ email)
-            , Navigation.newUrl "/"
+            , Nav.pushUrl model.navKey "/"
             )
 
         VerifiedEmail (Err err) ->
             ( { model | email = Failed err }
-                |> addMessage (toString err)
+                |> addMessage (httpErrorToString err)
             , Cmd.none
             )
 
 
-parseRoute : Location -> Route
-parseRoute location =
-    UrlParser.parsePath route location
-        |> Maybe.withDefault (Unknown location)
+parseRoute : Url -> Route
+parseRoute url =
+    UrlParser.parse route url
+        |> Maybe.withDefault (Unknown url)
 
 
 route : UrlParser.Parser (Route -> a) a
@@ -200,7 +236,7 @@ authGitHub dbKey maybeCode maybeState =
 authGitHubParser : UrlParser.Parser (String -> Maybe String -> Maybe String -> a) a
 authGitHubParser =
     -- successful redirect /auth/github/<key>?code=<str>&state=<str>
-    s "auth" </> s "github" </> UrlParser.string <?> stringParam "code" <?> stringParam "state"
+    s "auth" </> s "github" </> UrlParser.string <?> Query.string "code" <?> Query.string "state"
 
 
 authGoogle : Maybe String -> Maybe String -> Route
@@ -216,7 +252,7 @@ authGoogle maybeKey maybeCode =
 authGoogleParser : UrlParser.Parser (Maybe String -> Maybe String -> a) a
 authGoogleParser =
     -- successful redirect /auth/google?state=<key>&code=<str>#
-    s "auth" </> s "google" <?> stringParam "state" <?> stringParam "code"
+    s "auth" </> s "google" <?> Query.string "state" <?> Query.string "code"
 
 
 gitHubErrorAuth : Maybe String -> Maybe String -> Maybe String -> Maybe String -> Route
@@ -230,7 +266,7 @@ gitHubErrorAuth error description uri state =
 gitHubErrorAuthParser : UrlParser.Parser (Maybe String -> Maybe String -> Maybe String -> Maybe String -> a) a
 gitHubErrorAuthParser =
     -- see https://developer.github.com/apps/managing-oauth-apps/troubleshooting-authorization-request-errors/
-    s "auth" </> s "github" <?> stringParam "error" <?> stringParam "error_description" <?> stringParam "error_uri" <?> stringParam "state"
+    s "auth" </> s "github" <?> Query.string "error" <?> Query.string "error_description" <?> Query.string "error_uri" <?> Query.string "state"
 
 
 dropUseless : ( a, Maybe b ) -> Maybe ( a, b )
@@ -247,40 +283,46 @@ dropUseless ( key, maybeValue ) =
 ---- VIEW ----
 
 
-view : Model -> Html Msg
+view : Model -> Browser.Document Msg
 view model =
-    Html.div [ Attr.class "centered" ]
-        [ Html.main_ [ Attr.class "column" ] <|
-            case model.page of
-                Question ->
-                    question model
+    { title = "OAuth example"
+    , body =
+        [ Html.div [ Attr.class "centered" ]
+            [ Html.main_ [ Attr.class "column" ] <|
+                case model.page of
+                    Question ->
+                        question model
 
-                AuthGitHub dbKey code state ->
-                    -- this route is currently never displayed
-                    question model
+                    AuthGitHub dbKey code state ->
+                        -- this route is currently never displayed
+                        question model
 
-                AuthGoogle dbKey code ->
-                    -- this route is currently never displayed
-                    question model
+                    AuthGoogle dbKey code ->
+                        -- this route is currently never displayed
+                        question model
 
-                ErrorAuthGitHub errors ->
-                    [ Html.ul [] <|
-                        List.map
-                            (\( key, value ) ->
-                                Html.li []
-                                    [ Html.b [] [ Html.text <| key ++ ": " ]
-                                    , Html.text value
-                                    ]
-                            )
-                            errors
-                    ]
+                    ErrorAuthGitHub errors ->
+                        [ Html.ul [] <|
+                            List.map
+                                (\( key, value ) ->
+                                    Html.li []
+                                        [ Html.b [] [ Html.text <| key ++ ": " ]
+                                        , Html.text value
+                                        ]
+                                )
+                                errors
+                        ]
 
-                Unknown location ->
-                    [ Html.h2 [] [ Html.text "Unknown page" ]
-                    , Html.p [] [ Html.text location.pathname ]
-                    ]
-        , footer model
+                    Unknown location ->
+                        [ Html.h2 [] [ Html.text "Unknown page" ]
+
+                        -- , Html.p [] [ Html.text location.pathname ]
+                        , Html.p [] [ Html.text "todo" ]
+                        ]
+            , footer model
+            ]
         ]
+    }
 
 
 question : Model -> List (Html Msg)
@@ -290,7 +332,7 @@ question model =
         [ Html.text "Answer "
         , Html.input
             [ onInput Answer
-            , Attr.defaultValue <|
+            , Attr.value <|
                 Maybe.withDefault "" model.answer
             ]
             []
@@ -319,8 +361,40 @@ question model =
             Html.div [ Attr.class "loader" ] [ Html.text "Loading..." ]
 
         Failed error ->
-            Html.code [] [ Html.text <| toString error ]
+            Html.code [] [ Html.text <| httpErrorToString error ]
     ]
+
+
+httpErrorToString : Http.Error -> String
+httpErrorToString error =
+    let
+        _ =
+            Debug.log "httpErrorToString" error
+    in
+    case error of
+        Http.BadUrl string ->
+            "BadUrl: " ++ string
+
+        Http.Timeout ->
+            "Timeout"
+
+        Http.NetworkError ->
+            "NetworkError"
+
+        Http.BadStatus { url, status, headers, body } ->
+            -- type alias Response body =
+            --     { url : String
+            --     , status :
+            --         { code : Int
+            --         , message : String
+            --         }
+            --     , headers : Dict String String
+            --     , body : body
+            --     }
+            "BadStatus: " ++ String.fromInt status.code ++ " '" ++ status.message ++ "'"
+
+        Http.BadPayload string response ->
+            "BadPayload: " ++ string
 
 
 footer : Model -> Html msg
@@ -355,9 +429,11 @@ footer model =
 
 main : Program Json.Decode.Value Model Msg
 main =
-    Navigation.programWithFlags UrlChange
-        { view = view
-        , init = init
+    Browser.application
+        { init = init
+        , view = view
         , update = update
         , subscriptions = always Sub.none
+        , onUrlChange = UrlChange
+        , onUrlRequest = LinkClicked
         }

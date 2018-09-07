@@ -21,8 +21,9 @@
     <script>
         let data = {};
         /* INSERT_DATA */;
-        console.log('Will start elm app with', data)
-        Elm.Main.embed(document.getElementById('root'), data);
+        console.log('Will start elm app with', data);
+        let node = document.getElementById('root')
+        Elm.Main.init({ node, flags: data });
     </script>
 </body>
 

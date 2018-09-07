@@ -2,11 +2,15 @@
   "name": "koa-elm-oauth-example",
   "version": "1.1.0",
   "description": "OAuth example",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/marc136/oauth-koa-elm"
+  },
   "main": "index.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
-    "start": "elm-make --yes elm/Main.elm --output=public/elm.js && uglifyjs -c -m -o public/elm.js public/elm.js && node server",
-    "build": "elm-make --yes elm/Main.elm --output=public/elm.js",
+    "start": "npx elm make --yes elm/Main.elm --output=public/elm.js && uglifyjs -c -m -o public/elm.js public/elm.js && node server",
+    "build": "npx elm make elm/Main.elm --output=public/elm.js",
     "server": "node server"
   },
   "keywords": [],
@@ -16,13 +20,16 @@
     "node": ">=10.0.0"
   },
   "dependencies": {
-    "elm": "^0.18.0",
+    "elm": "0.19.0",
+    "elm-format": "^0.8.0",
     "koa": "^2.5.1",
     "koa-bodyparser": "^4.2.1",
     "koa-logger": "^3.2.0",
     "koa-route": "^3.2.0",
     "koa-static": "^4.0.3",
     "node-fetch": "^2.1.2",
+    "npx": "^10.2.0",
+    "request": "^2.88.0",
     "uglify-js": "^3.4.0"
   }
 }
